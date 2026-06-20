@@ -1,0 +1,355 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  channels      Channel[]
+  memberships   ChannelMember[]
+  messages      Message[]
+  invitesSent   ChannelInvite[] @relation("InvitesSent")
+  invitesReceived ChannelInvite[] @relation("InvitesReceived")
+  notifications          Notification[]
+  notificationPreference NotificationPreference?
+  conversations          DMParticipant[]
+  dmMessages     DirectMessage[]
+  friends        Friend[] @relation("UserFriends")
+  friendOf       Friend[] @relation("FriendOf")
+  tasks          Task[] @relation("TaskCreator")
+  taskAssignments TaskAssignee[]
+  files          File[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Channel {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  type        String   @default("PUBLIC")
+  isArchived  Boolean  @default(false)
+  archivedAt  DateTime?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creator    User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  members    ChannelMember[]
+  messages   Message[]
+  invites    ChannelInvite[]
+  tasks      Task[]
+
+  @@unique([name])
+  @@index([type, isArchived])
+  @@index([createdById])
+  @@map("channel")
+}
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  channelId String
+  userId    String
+  role      String   @default("MEMBER")
+  joinedAt  DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+  @@map("channel_member")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  channelId String
+  senderId  String
+  createdAt DateTime @default(now())
+  isEdited  Boolean  @default(false)
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender  User    @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  attachments MessageAttachment[]
+
+  @@index([channelId])
+  @@index([channelId, id])
+  @@map("message")
+}
+
+model ChannelInvite {
+  id              String   @id @default(cuid())
+  channelId       String
+  invitedUserId   String
+  invitedByUserId String
+  status          String   @default("PENDING")
+  createdAt       DateTime @default(now())
+
+  channel    Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  invitedBy  User    @relation("InvitesSent", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  invitedUser User   @relation("InvitesReceived", fields: [invitedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, invitedUserId])
+  @@index([invitedUserId])
+  @@index([invitedUserId, status])
+  @@map("channel_invite")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead, createdAt])
+  @@map("notification")
+}
+
+model NotificationPreference {
+  id                String  @id @default(cuid())
+  userId            String  @unique
+  emailNotifications Boolean @default(true)
+  inAppNotifications Boolean @default(true)
+  channelInvites     Boolean @default(true)
+  taskAssignments    Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preference")
+}
+
+model Task {
+  id                String    @id @default(cuid())
+  key               String
+  title             String
+  description       String?
+  priority          String    @default("medium")
+  status            String    @default("backlog")
+  storyPoints       Int?
+  dueDate           DateTime?
+  reminderAt        DateTime?
+  reminderNotifiedAt DateTime?
+  recurrenceRule    String?
+  nextRecurrenceAt  DateTime?
+  channelId         String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  channel  Channel?      @relation(fields: [channelId], references: [id])
+  createdBy User  @relation("TaskCreator", fields: [createdById], references: [id])
+  assignees TaskAssignee[]
+  labels    TaskLabel[]
+
+  @@index([status])
+  @@index([createdById])
+  @@index([status, createdAt])
+  @@index([nextRecurrenceAt])
+  @@map("task")
+}
+
+model TaskAssignee {
+  id     String @id @default(cuid())
+  taskId String
+  userId String
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([taskId, userId])
+  @@map("task_assignee")
+}
+
+model TaskLabel {
+  id    String @id @default(cuid())
+  taskId String
+  label String
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, label])
+  @@map("task_label")
+}
+
+model Friend {
+  id        String             @id @default(cuid())
+  userId    String
+  friendId  String
+  status    FriendStatus       @default(PENDING)
+  createdAt DateTime           @default(now())
+
+  user   User @relation("UserFriends", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendOf", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@index([friendId])
+  @@index([friendId, status])
+  @@index([userId, status])
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants DMParticipant[]
+  messages     DirectMessage[]
+
+  @@map("conversation")
+}
+
+model DMParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("dm_participant")
+}
+
+model DirectMessage {
+  id             String   @id @default(cuid())
+  content        String
+  conversationId String
+  senderId       String
+  createdAt      DateTime @default(now())
+  isEdited      Boolean  @default(false)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  attachments  DirectMessageAttachment[]
+
+  @@index([conversationId])
+  @@index([conversationId, id])
+  @@map("direct_message")
+}
+
+model File {
+  id           String   @id @default(cuid())
+  userId       String
+  originalName String
+  storedName   String
+  mimeType     String
+  size         Int
+  type         String
+  createdAt    DateTime @default(now())
+
+  user                User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageAttachments  MessageAttachment[]
+  dmMessageAttachments DirectMessageAttachment[]
+
+  @@index([userId])
+  @@index([type, createdAt])
+  @@map("file")
+}
+
+model MessageAttachment {
+  id        String @id @default(cuid())
+  messageId String
+  fileId    String
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  file    File    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, fileId])
+  @@index([fileId])
+  @@map("message_attachment")
+}
+
+model DirectMessageAttachment {
+  id               String @id @default(cuid())
+  directMessageId  String
+  fileId           String
+
+  directMessage DirectMessage @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+  file          File          @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([directMessageId, fileId])
+  @@index([fileId])
+  @@map("direct_message_attachment")
+}
