@@ -1,1 +1,0 @@
-videocall will contains the frontend code for the video call application. which only needed to be imported as component where needed
